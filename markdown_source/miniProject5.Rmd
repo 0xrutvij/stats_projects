@@ -1,0 +1,303 @@
+---
+title: "Mini Project 5"
+subtitle: "CS6313.001"
+author: "Rutvij Shah (rds190000)"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+header-includes:
+- \usepackage{amsmath}
+- \usepackage{nicefrac}
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document:
+    df_print: paged
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, collapse=F, comment="##")
+```
+
+# Question 1
+## Part (a)
+```{r}
+bt_hr = read.csv("~/Downloads/bodytemp-heartrate.csv")
+
+male_subs = bt_hr[bt_hr$gender == 1,][,c("body_temperature","heart_rate")]
+female_subs = bt_hr[bt_hr$gender == 2,][,c("body_temperature","heart_rate")]
+
+male_temp = male_subs$body_temperature; female_temp = female_subs$body_temperature
+
+boxplot(
+  male_temp, female_temp, 
+  main = "Boxplots of Body Temperature", 
+  names = c('Male Subjects', 'Female Subjects'), 
+  ylab = "Temperature *F" )
+```
+```{r}
+qqnorm(male_temp, main="Q-Q (Normal) For Male Body Temp"); qqline(male_temp)
+
+qqnorm(female_temp, main="Q-Q (Normal) For Female Body Temp"); qqline(female_temp)
+
+
+# Five Point Summary + Mean for Body Temperature by gender
+summary(male_temp)
+
+summary(female_temp)
+
+cat("Variance male body temp:", round(var(male_temp), 2))
+
+cat("Variance female body temp:", round(var(female_temp), 2))
+
+# Since the variance are not equal
+t.test(male_temp, female_temp, var.equal = F)
+```
+Conclusion: 
+Both the box-plot EDA & the T-Test for the Null Hypothesis that both have
+same mean body temperature show that the Null Hypotheses is false.
+
+Since the value of $p = 0.024$ is less than $\alpha = 0.05$, and also since 0 does
+not lie in the CI, we reject the Null Hypotheses and **accept the alternative 
+that there is a difference in means of male and female body temperature**
+
+## Part (b)
+
+```{r}
+male_hr = male_subs$heart_rate;
+female_hr = female_subs$heart_rate
+
+boxplot(
+  male_hr, female_hr, 
+  main = "Boxplots of Heart Rate", 
+  names = c('Male Subjects', 'Female Subjects'), 
+  ylab = "Heart Rate" )
+
+qqnorm(male_hr, main = "QQ Plot for Male Heart-Rate"); qqline(male_hr)
+qqnorm(female_hr, main = "QQ Plot for Female Heart-Rate"); qqline(female_hr)
+
+cat("Variance male heart rate:", round(var(male_temp), 2))
+cat("Variance female heart rate:", round(var(female_temp), 2))
+
+
+t.test(male_hr, female_hr, var.equal = F)
+```
+Based on both the box plot & the t-test for our hypotheses that male subjects
+and female subjects have similar mean heart rate, we can conclude that is indeed
+the case.
+
+The null hypotheses is that both male & female heart rate has the same mean,
+and since $p = 0.529$ is greater than $\alpha = 0.05$, we accept the null 
+hypotheses. Also, the difference of means, 0, lies within our CI.
+
+
+## Part (c)
+
+```{r}
+s1 = "HR vs Temp for Male Subjects"
+s2 = "Heart Rate vs Temp for Female Subjects"
+plot(male_hr, male_temp, main = s1); abline(lm(male_temp~male_hr))
+
+plot(female_hr, female_temp, main = s2); abline(lm(female_temp~female_hr))
+
+cor(male_hr, male_temp)
+cor(female_hr, female_temp)
+```
+Observations: 
+
+There is weak linear correlation between heart rate and body temperature for 
+both the genders. $\rho = 0.196$ for males and $\rho = 0.287$ for females, this
+also shows that the strength of the linear correlation is higher for females
+than for males but whether it is statistically significant is a question that
+can't be answered due to the small sample size of 65 each.
+
+# Question 2
+
+## Part (a)
+
+```{r cache=TRUE}
+library(dplyr)
+library(data.table)
+library(parallel)
+
+alpha = 1 - 0.95
+alpha.by2 = alpha / 2
+
+z.ci <- function(n, lambda) {
+  
+  random_sample = rexp(n, lambda)
+  true_mean = 1/lambda
+  
+  Z_CI = mean(random_sample) + c(-1, +1) * qnorm(1-alpha.by2) * sd(random_sample)/sqrt(n)
+  
+  return(as.integer(between(true_mean, Z_CI[1], Z_CI[2])))
+  
+}
+
+mean.resample_rexp <- function(n, lambda.bar) {
+  
+  nstar <- rexp(n, lambda.bar)
+  return(mean(nstar))
+  
+}
+
+b.ci <- function(n, lambda) {
+  
+  n.boot = 1000
+  random_sample = rexp(n, lambda)
+  true_mean = 1/lambda
+  
+  sample_mean = mean(random_sample)
+  lambda.hat = 1/sample_mean
+  
+  resamples = rexp(n*n.boot, lambda.hat)
+  bootstrapsamples = matrix(resamples, nrow=n, ncol=n.boot)
+  
+  mean.stars = colMeans(bootstrapsamples)
+  
+  percentiles = c(alpha.by2, 1 - alpha.by2)
+  B_CI = sort(mean.stars)[percentiles*n.boot]
+  
+  return(as.integer(between(true_mean, B_CI[1], B_CI[2])))
+  
+}
+
+calculate_coverage_probabilities <- function(nsims, ci_estimator_func, n, lambda) {
+  values <- replicate(nsims, ci_estimator_func(n, lambda))
+  num_ones <- sum(values)
+  return(num_ones/nsims)
+}
+
+
+# random sample from exponential distribution with size n & some value of lambda
+lambda = 0.01
+n = 5
+
+z_cover = calculate_coverage_probabilities(5000, z.ci, n, lambda)
+
+b_cover = calculate_coverage_probabilities(5000, b.ci, n, lambda)
+
+cat(paste("Coverage Probability of Z interval for n: ", n, " and lambda: ",
+          lambda, " is = ", z_cover))
+
+cat(paste("\nCoverage Probability of bootstrap interval for n: ", n, 
+          " and lambda: ", lambda, " is = ", b_cover))
+
+
+funcs = c(z.ci, b.ci)
+n.vals = c(5,10,30,100)
+lambda.vals = c(0.01,0.1,1,10)
+```
+
+## Part (b)
+
+### Table for coverage probabilities for Z Confidence Intervals
+
+n is the first column ranging from 5 to 100 while lambdas are the each one 
+column named with their values.
+```{r cache=TRUE}
+z_df = expand.grid(n.vals, lambda.vals)
+z_df$var3 = mcmapply(calculate_coverage_probabilities,
+                     5000, c(z.ci), z_df$Var1, z_df$Var2, mc.cores=7)
+colnames(z_df) <- c("n", "lambda", "coverage_prob")
+z_table = data.table(z_df)
+data.table::dcast(z_table, n ~ lambda, value.var = "coverage_prob")
+```
+
+### Table for coverage probabilities for Bootstrap Confidence Intervals
+
+n is the first column ranging from 5 to 100 while lambdas are the each one 
+column named with their values.
+```{r cache=TRUE}
+b_df = expand.grid(n.vals, lambda.vals)
+
+b_df$var3 = mcmapply(calculate_coverage_probabilities, 
+                     5000, c(b.ci), b_df$Var1, b_df$Var2, mc.cores=7)
+
+colnames(b_df) <- c("n", "lambda", "coverage_prob")
+b_table = data.table(b_df)
+data.table::dcast(b_table, n ~ lambda, value.var = "coverage_prob")
+```
+
+
+## Part (c)
+
+As evident from the tables, we can see that the effect of lambda is neglible
+on the coverage probability for a given n-value.
+
+Both for Bootstrap CIs & Z CIs, the probabilities increase we the increase in
+n. And as n tends to 100 the probabilities tend to the 1-alpha value, i.e., the
+95% confidence interval expected.
+
+If time and compute power allowed, we could perform multiple runs for each
+n and lambda value and find the mean tendency for the CP, and then calculating
+the variance of mean CP for a constant and varied lambda would most likely
+tend to 0.
+
+Specific interpretations.
+
+1. Large-Sample Interval n-size for accuracy ~ n=100 (mean cp ~ 0.9381). Since 
+the mean-cp for that n value has about 1% error wrt 95% CI.
+
+2. Bootstrap Interval n-size for accuracy ~ n=30 (mean cp ~ 0.9389). Since the 
+mean-cp for that n value has about 1% error wrt 95% CI.
+
+3. No, these answers are independent of lambda.
+
+4. Yes, Bootstrap interval method consistently outperforms large sample interval
+for all input sizes hence it would be by recommended method. Bootstrap CI is 
+indeed more accurate than Large-Sample CI.
+
+```{r cache=TRUE}
+# Something along the lines of this...
+mean_coverage_prob <- function(n, lambda) {
+  
+  x = replicate(
+    10,
+    calculate_coverage_probabilities(5000, b.ci, n, lambda)
+  )
+  return(mean(x))
+  
+}
+
+mean_coverage_prob(5, 0.01)
+```
+
+## Part (d)
+
+We can say even though we fixed the value of lambda in advance these conclusions
+will hold irrespective, since they're largely dependent on n.
+
+```{r cache = TRUE}
+linear_correlation_n_cp_for_const_lambda.bootstrap = b_df %>%
+  group_by(lambda) %>%
+  summarise(n_prob_correlation = cor(n, coverage_prob))
+
+linear_correlation_n_cp_for_const_lambda.bootstrap
+```
+
+
+```{r cache = TRUE, eval=FALSE}
+cor(linear_correlation_n_cp_for_const_lambda.bootstrap$lambda, 
+    linear_correlation_n_cp_for_const_lambda.bootstrap$n_prob_correlation)
+```
+
+I will stand corrected, lambda does influence the linear correlation between,
+"n" & "coverage probability" in case of bootstrap CI estimates, and in fact
+has a strong linear correlation itself $\rho = 0.941$
+
+```{r cache=TRUE}
+linear_correlation_n_cp_for_const_lambda.z = z_df %>%
+  group_by(lambda) %>%
+  summarise(n_prob_correlation = cor(n, coverage_prob))
+
+linear_correlation_n_cp_for_const_lambda.z
+```
+
+
+```{r cache=TRUE, eval=FALSE}
+cor(linear_correlation_n_cp_for_const_lambda.z$lambda, 
+    linear_correlation_n_cp_for_const_lambda.z$n_prob_correlation)
+
+```
+
+In case of Large Interval CIs there is no dependence on lambda as $\rho = 0.124$
+
+

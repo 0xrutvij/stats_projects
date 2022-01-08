@@ -1,0 +1,230 @@
+---
+title: "Mini Project 4"
+subtitle: "CS6313.001"
+author: "Rutvij Shah (rds190000)"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+header-includes:
+- \usepackage{amsmath}
+- \usepackage{nicefrac}
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document:
+    df_print: paged
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, collapse=F, comment="##")
+```
+
+## Question 1
+
+```{r}
+library(ggplot2)
+
+gpa_act = read.csv("~/Downloads/gpa.csv")
+gpa = gpa_act$gpa; act = gpa_act$act;
+
+ggplot(gpa_act, aes(x=gpa, y=act)) + 
+  geom_point() +
+  geom_smooth(method="lm", se=F, formula = y~x)
+```
+```{r}
+sample_correlation = round(cor(gpa, act), 3)
+cat(
+  paste("\nThe sample correlation for GPA and ACT scores is:",
+        sample_correlation)
+  )
+```
+This suggests there is a slight positive linear correlation between the two samples.
+```{r}
+library(boot)
+cor.npar <- function(x, indices) {
+  result <- cor(x[indices,]$gpa, x[indices,]$act)
+  return(result)
+}
+
+cor.npar.boot <- boot(data=gpa_act, cor.npar, R=999, sim="ordinary", stype="i")
+
+cor.gpa.act <- cor.npar.boot$t0
+
+bootstrap.bias.cor <- mean(cor.npar.boot$t) - cor.npar.boot$t0
+
+bootstrap.se.cor <- sd(cor.npar.boot$t)
+
+# For verification
+percentile.95.ci.verif <- boot.ci(boot.out = cor.npar.boot, type="perc")
+
+percentile.95.ci.bot <- quantile(cor.npar.boot$t,0.025, names=F)
+percentile.95.ci.top <- quantile(cor.npar.boot$t,0.975, names=F)
+
+cat(paste(
+  "\nPoint Estimate of correlation between GPA and ACT scores", 
+  "\U03C1 =", round(cor.gpa.act, 3), "\n"))
+
+cat(paste(
+  "\nBootstrap Esitmate of bias for \U03C1 = ", 
+  round(bootstrap.bias.cor, 3), "\n"))
+
+cat(paste(
+  "\nBootstrap Esitmate of SE for \U03C1 = ", 
+  round(bootstrap.se.cor, 3), "\n"))
+
+ci = paste("[", round(percentile.95.ci.bot, 3),
+  ", ", round(percentile.95.ci.top, 3), "]", sep="")
+
+cat(paste(
+    "\nThe 95% CI for (percentile bootstrap based) for \U03C1 -> ",
+    ci, "\n"))
+```
+
+## Question 2
+
+### (a)
+
+```{r}
+voltage_data = read.csv("~/Downloads/voltage.csv")
+v_remote = voltage_data[voltage_data$location == 0,][,'voltage']
+v_local = voltage_data[voltage_data$location == 1,][,'voltage']
+
+
+boxplot(v_remote, v_local, names = c("Remote", "Local"), range = 1.5)
+
+cat("Five point summary + mean for remote voltage.\n")
+summary(v_remote)
+
+cat("Five point summary + mean for local voltage.\n")
+summary(v_local)
+```
+The readings for the remote location are higher, on average when compared to those which are local. And the five point summary reiterates the graphical observation from the box plot.
+
+For both sets of data, the mean is less than the median, thereby suggesting the presence of a left-skew.
+
+Now to check the normality of the data.
+
+```{r}
+qqnorm(v_remote, main = "Remote Voltage"); qqline(v_remote)
+
+qqnorm(v_local, main = "Local Voltage"); qqline(v_local)
+```
+
+We can observe that both distribution's qqplots suggest that the distributions can be considered to be approximations of a normal distribution. 
+
+### (b)
+
+Null Hypothesis: $\mu_{remote} - \mu_{local} = 0$
+Alternate Hypothesis: $\mu_{remote} - \mu_{local} \neq 0$
+
+Assuming the samples are i.i.d (proof of normalization based on qqplots). Though, since IQRs have a large difference, we cannot assume the population variances are equal.
+
+Thus, we must use the Satterthwaite approximation to approximate a T-distribution.
+
+Degrees of freedom for CI of a difference of means, given unequal, unknown standard deviations:
+
+\[
+\nu = \left[ (\dfrac{s^2_X}{n} + \dfrac{s^2_Y}{m})^2
+      \middle/
+       \dfrac{s^4_X}{n^2(n-1)} + \dfrac{s^4_Y}{m^2(m-1)} \right]
+\]
+
+Where 
+
+```{r}
+cat(paste("s\U2093 = "), round(sd(v_remote), 3))
+cat(paste("\nn =", length(v_remote)))
+cat(paste("\n\ns\U1d67 = "), round(sd(v_local), 3))
+cat(paste("\nm =", length(v_local)))
+```
+
+Therefore, 
+
+\[\large
+\nu = \left[
+        (\dfrac{0.522}{30})^2
+      \middle/
+        \dfrac{0.138}{26100}
+      \right]
+\]
+
+\[\large
+\nu = \dfrac{0.272 * 26100}{0.138 * 900}
+\]
+Degrees of freedom, $\nu = 57.16$
+
+Assuming we want 95% CI, $\dfrac{\alpha}{2} = .025$
+
+The CI is, 
+
+\[\large \bar{X} - \bar{Y} \pm t_{0.025} \sqrt{\dfrac{s^2_X}{n} + \dfrac{s^2_Y}{m}} \]
+```{r, fold=T}
+cat(paste("T's Critical Value", round(qt(.975, 57.16),3)))
+cat(paste("\nMean of Remote Voltage Sample", round(mean(v_remote),3)))
+cat(paste("\nMean of Local Voltage Sample", round(mean(v_local),3)))
+# diff = mean(v_remote) - mean(v_local)
+# ci = diff + c(-1, +1) * qt(.975, 57.16) * sqrt(0.522/30)
+# t = diff / sqrt(0.522/30)
+```
+
+
+\[\large 9.804 - 9.422 \pm 2.002 * \sqrt{\dfrac{0.522}{30}} \]
+\[\large 0.381 \pm 0.264\]
+
+> **ANS** i.e. the CI is [0.117, 0.645]
+
+For a two-sided alternative, we reject $H_0$ if $|t| \geq t_{\alpha / 2}$ and accept otherwise.
+\[
+t = 
+  \dfrac
+  {\bar{X} - \bar{Y} - D}
+  {\sqrt{\dfrac{s^2_X}{n} + \dfrac{s^2_Y}{m}}}
+\]
+
+
+\[
+t = \dfrac{9.804 - 9.422}{ \sqrt{\frac{0.522}{30}}} = \frac{0.062}{ 0.132}
+\]
+
+Since $t=2.89$ is within the rejection region of $(-\infty,-2.002] \cup [2.002,\infty)$ we **reject** the null hypothesis & state that the remote process cannot be localized. Alternatively, the p value is significantly less than $\alpha = 0.05$, we **reject** $H_0$
+
+```{r}
+# confirmation of manual calculations & findings 
+t.test(v_remote, v_local)
+```
+
+### (c)
+
+Part (a) suggested that the voltage readings at the remote location are consistently higher than those taken locally. The conclusion from the hypothesis test confirms that observation and makes it statistically evident that the process cannot be localized without significant error/change in metric. 
+
+\pagebreak
+## Question 3
+
+```{r}
+vapor_data = read.csv("~/Downloads/vapor.csv")
+
+boxplot(vapor_data$theoretical, vapor_data$experimental,
+        names=c("Theoretical", "Experimental"))
+
+qqnorm(vapor_data$theoretical, main="Theoretical"); qqline(vapor_data$theoretical)
+
+qqnorm(vapor_data$experimental, main="Experimental"); qqline(vapor_data$experimental)
+
+summary(vapor_data[,-1])
+```
+
+The boxplots suggest that both sets of data have similar distributions & the qqplots suggest that they are close to normally distributed.
+
+The summary statistics suggest that they're right skewed distributions (mean > median) and backup the observation that their SDs/Variances are similar.
+
+Thus, our problem becomes that of finding a confidence interval (and testing a hypothesis) for the difference of means for a small sample (16 readings) from two distributions which have equal but unknown standard deviations.
+
+Which necessitates the use of a T-Test, with the given conditions.
+
+Null Hypothesis = $\mu_{theoretical} = \mu_{experimental}$
+Alternate Hypothesis = $\mu_{theoretical} \neq \mu_{experimental}$
+
+```{r}
+t.test(vapor_data$theoretical, vapor_data$experimental, var.equal =TRUE, paired = TRUE)
+```
+
+The Two-Sample T test, confirms the Null Hypothesis, the mean of the difference between experimental & theoretical mean is close to 0 and a p-value of 0.8492 derived from a t value of 0.019 suggests that with a high degree of confidence. 
+
+Thus, we can indeed say that the theoretical model for vapor pressure is a good model of reality.
